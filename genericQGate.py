@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow_probability as tfp
+#import tensorflow_probability as tfp
 
 class genericQGate:
 
@@ -51,17 +51,17 @@ class genericQGate:
 
         return tf.matmul(cayley,param)
 
-    def update(self, derivative):
-        return self.param.assign(self.projection(derivative,self.param,self.learningrate))
+    def update(self, derivative,learningrate):
+        return self.param.assign(self.projection(derivative,self.param,learningrate))
 
     def grad(self,cost):
         return tf.squeeze(tf.gradients(ys=cost, xs=self.param))
 
-    def sgd(self,cost):
+    def sgd(self,cost,learningrate):
         dW =(1-self.momentum) *self.grad(cost)+ self.momentum*self.prev
         self.prev =dW
 
-        return self.update(dW)
+        return self.update(dW,learningrate)
 
     def rms(self, cost,gamma=0.9):
         dW = self.grad(cost)

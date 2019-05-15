@@ -16,7 +16,7 @@ class SubCircuit:
         pass
 
     @abstractmethod
-    def update(self,cost):
+    def update(self,cost,learningrate):
         pass
 
 #bugger
@@ -26,9 +26,9 @@ class ArityFillCircuit(SubCircuit):
         init = tf.orthogonal_initializer
         self.arity=arity
         size= 1 << arity
-        real = tf.get_variable(name+"w",[size,size],initializer=init)
-        #real= tf.eye(size, dtype="float32")
-        imag = tf.zeros_like(real,dtype="float32")
+        #real = tf.get_variable(name+"w",[size,size],initializer=init)
+        real= tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
+        imag =  tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
         param=tf.complex(real,imag)
         for y in range(0,length):
             if(y%2==0):
@@ -42,8 +42,8 @@ class ArityFillCircuit(SubCircuit):
                 if(pos <nbqubitinput):
                     with tf.variable_scope(name+"row"+str(y)+"gate"+ str(pos)):
                         size = 1 << leftover
-                        real = tf.get_variable("v",[size,size],initializer=init)
-                        #real = tf.eye(size, dtype="float32")
+                        #real = tf.get_variable("v",[size,size],initializer=init)
+                        real = tf.eye(size, dtype="float32")
                         imag = tf.zeros_like(real)
                         param_l = tf.complex(real, imag)
                         gate = genericQGate.genericQGate(param_l, nbqubitinput, leftover, pos, learningrate, momentum)
@@ -82,10 +82,10 @@ class ArityFillCircuit(SubCircuit):
         return tmp
 
 
-    def update(self,cost):
+    def update(self,cost,learningrate):
         gradlist=[]
         for gate in self.gatelist:
-            gradlist.append(gate.sgd(cost))
+            gradlist.append(gate.sgd(cost,learningrate))
 
         return gradlist
 
