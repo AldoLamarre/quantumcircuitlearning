@@ -30,15 +30,15 @@ def preprocess(input,nbqubits):
 if __name__ == "__main__":
     #tf.enable_eager_execution()
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
-    learningrate = -0.1
+    learningrate = -0.01
     momentum = 0.9
     datasize = 60000
-    batch_size = 24
+    batch_size = 2
     iterepoch= datasize / batch_size
-    nbqubits=10
+    nbqubits= 11
     targetnbqubit=4
-    aritycircuitsize=7
-    aritycircuitdepth= 7
+    aritycircuitsize= 8
+    aritycircuitdepth= 9
 
     x = tf.placeholder(tf.float32, shape=[None, 784])
     y = tf.placeholder(tf.int64, shape=[None])
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     iter = tf.cast(tf.placeholder(tf.int32, shape=()),tf.float32)
 
     # lrdecay =learningrate
-    lrdecay= tf.complex(learningrate / tf.add(iter , 1.0),0.0)
+    lrdecay= tf.complex(learningrate / tf.add(iter/100 , 1.0),0.0)
     #lrdecay = learningrate*tf.complex(tf.pow(0.5,tf.floor(iter / 2)), 0.0)
 
     #init = tf.orthogonal_initializer
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     #imag = tf.zeros_like(real, dtype="float32")
     #param = tf.complex(real, imag)
 
-    vectorinputs = preprocess(x,10)
+    vectorinputs = preprocess(x,nbqubits)
 
     #cir = subcircuit.ArityFillCircuit(nbqubits, 8, 6, "test0", learningrate, momentum)
     cir = subcircuit.ArityFillCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
@@ -107,12 +107,12 @@ if __name__ == "__main__":
 
         start = tf.global_variables_initializer()
         sess.run(start)
-        for i in range(150000):
+        for i in range(600000):
             # print("iter "+str(i))
             input_batch, labels_batch = mnist.train.next_batch(batch_size)
             input_batch = input_batch / 255
 
-
+            #print(labels_batch)
             fd,mjm,mxm, up, s = sess.run([cost,majmetric,maxmetric, updates, summaries],feed_dict={x: input_batch,y: labels_batch,iter: epoch}, options=options, run_metadata=run_metadata)
             fdloop += fd
             mjmloop += mjm
@@ -129,13 +129,13 @@ if __name__ == "__main__":
                 g.close()
             if (i + 1)  % 50 == 0 and epoch <4:
                 dem=(i - (epoch * iterepoch) + 1)
-                print("iter " + str(i) + "\nfd = " + str(fdloop/dem))
+                print("iter " + str(i) + "\n-log(fd) = " + str(fdloop/dem))
                 print( "majority accuracy = " + str(mjmloop /dem))
                 print(" max accuracy = " + str(mxmloop / dem))
                 #print(labels_batch)
 
-                f.write("iter loss list: \n" + str(fd_list)+"\n")
-                f.flush()
+                #f.write("iter loss list: \n" + str(fd_list)+"\n")
+                #f.flush()
 
             if (i + 1) % iterepoch == 0 and i > 0:
                 fdloop /= iterepoch

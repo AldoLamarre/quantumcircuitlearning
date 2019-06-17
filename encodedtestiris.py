@@ -29,7 +29,7 @@ def preprocess(input):
 
 if __name__ == "__main__":
     #tf.enable_eager_execution()
-    learningrate = 0.01
+    learningrate = -0.01
     momentum = 0.01
     nbqubits=16
     targetnbqubit=2
@@ -88,9 +88,17 @@ if __name__ == "__main__":
 
     #print(out.shape)
     fd_list = lossfunction.fidelity_partial_list(out, target,nbqubits,targetnbqubit)
+
+    majmetric_train = lossfunction.majority_metric(fd_list)
+    maxmetric_train  = lossfunction.max_metric(out,targetbatch,nbqubits,targetnbqubit,3,"inttoqubit")
+
+
     #weight=tf.clip_by_value(fd_list, 0.0, 0.5)
     #weighted_cost = tf.multiply(fd_list,weight)
-    cost=tf.reduce_mean(fd_list)
+    #cost=tf.reduce_mean(fd_list)
+
+    cost = lossfunction.cross_entropy(out, target,nbqubits,targetnbqubit)
+
     #print(cost)
     #cost = lossfunction.fidelity(out, target)
     #print(cost2)
@@ -118,7 +126,12 @@ if __name__ == "__main__":
     fd_test_list = lossfunction.fidelity_partial_list(outtest, targettest,nbqubits,targetnbqubit)
     #costtest = lossfunction.fidelity_partial(outtest, targettest,nbqubits,targetnbqubit)
 
+    majmetric_test = lossfunction.majority_metric(fd_test_list)
+    maxmetric_test = lossfunction.max_metric(outtest, testtargetbatch, nbqubits, targetnbqubit, 3, "inttoqubit")
+
+    #costtest = lossfunction.cross_entropy(outtest,targettest,nbqubits, targetnbqubit)
     costtest =  tf.reduce_mean(fd_test_list)
+
     #costmtest = lossfunction.msq_real(tf.real(outtest), tf.real(targettestmsq))
     #print(tf.shape(out[1]))
     #print(tf.shape(target[1]))
@@ -127,9 +140,11 @@ if __name__ == "__main__":
 
 
     flag = 1
-    max = 0
+    max = 10
     itermax = 0
     fdloop=0
+    mxmloop=0
+    mjmloop = 0
     epoch=0
     summaries = tf.summary.merge_all()
     f = open("log\\log_" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "x")
@@ -145,27 +160,42 @@ if __name__ == "__main__":
         sess.run(start)
         for i in range(9000):
             # print("iter "+str(i))
-            fd,up, s = sess.run([cost, updates, summaries,],feed_dict={iter: epoch },options=options, run_metadata=run_metadata)
-            fdloop+=fd
+            fd,maj,max,up, s = sess.run([cost,majmetric_train,maxmetric_train ,updates, summaries,],feed_dict={iter: epoch },options=options, run_metadata=run_metadata)
+            fdloop += fd
+            mxmloop += max
+            mjmloop += maj
             # print(fd)
             # print(cm)
             if (i+1)%75==0 and i>0:
-                fdloop /= 75+1
+                fdloop /= 75
+                mxmloop /= 75
+                mjmloop /= 75
                 epoch +=1
                 print("iter " + str(epoch) + "\nfd = " + str(fdloop))
+                print("majority accuracy = " + str(mjmloop))
+                print("max accuracy = " + str(mxmloop))
                 summary_writer.add_summary(s, epoch)
-                if fdloop > max:
+                if fdloop < max:
                     max = fdloop
                     itermax = epoch
                     f.write("iter: " + str(epoch) + "\nfd: " + str(fdloop)  + "\nparam: " + str(
-                        up) + "\n" + "iter end\n")
-                    fdtest = sess.run([costtest])
-                    print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) )
-                    f.write("iter test: " + str(epoch) + "\nfd test: " + str(fdtest) + "\nparam: " + str(
+                        up) + "\nmajority accuracy = " + str(mjmloop) + "\nmax accuracy = " +
+                            str(mxmloop) + "\n" + "iter end\n")
+                    fdtest,maj,mx = sess.run([costtest,majmetric_test,maxmetric_test])
+                    print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) +
+                          "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                            str(mx))
+                    f.write("iter test: " + str(epoch) + "\nfd test: " + str(fdtest) +
+                            "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                            str(mx) +"\nparam: " + str(
                         up) + "\n" + "iter test end\n")
                 if epoch % 10 ==0 or epoch >= 130:
-                    fdtest,ttest,itest,otest,fdlist = sess.run([costtest,targettest,testready,outtest,fd_test_list])
-                    print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) )
+                    fdtest,ttest,itest,otest,fdlist,maj,mx = sess.run([costtest,targettest,
+                                                                       testready,outtest,fd_test_list,
+                                                                       majmetric_test,maxmetric_test])
+                    print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) +
+                          "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                            str(mx))
                     f.write("iter test:" + str(epoch) + "\nfd test: " + str(fdtest) + "\nparam: " + str(
                         up) + "\n" + "iter test end\n")
 
@@ -174,6 +204,8 @@ if __name__ == "__main__":
                     f.write("input test " + str(itest)+ "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
                             "\nfd_list  test= " + str(fdlist) +"\ntest end\n")
                 fdloop = 0
+                mxmloop = 0
+                mjmloop = 0
         # Create the Timeline object, and write it to a json file
         fetched_timeline = timeline.Timeline(run_metadata.step_stats)
         chrome_trace = fetched_timeline.generate_chrome_trace_format()

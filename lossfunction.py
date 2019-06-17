@@ -58,8 +58,13 @@ def maxclass(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding):
 
 def max_metric(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding):
     temp = maxclass(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding)
-    return tf.reduce_mean(tf.where(tf.equal(temp,tf.cast(labels,dtype='int64')),tf.ones_like(labels),
-                                   tf.zeros_like(labels)))
+    temp2=tf.where(tf.equal(temp,tf.cast(labels,dtype='int64')),tf.ones_like(labels),
+                                   tf.zeros_like(labels))
+    #print(output)
+    #print(labels)
+    #print(temp)
+    #print(temp2)
+    return tf.reduce_mean(tf.cast(temp2,dtype='float32'))
 
 def cross_entropy(output, target,nbqubitout,nbqutbittarget):
     fd_list=fidelity_partial_list(output,target,nbqubitout,nbqutbittarget)
