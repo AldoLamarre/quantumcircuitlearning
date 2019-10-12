@@ -14,7 +14,8 @@ class genericQGate:
         self.param=tf.get_variable("w"+str(len(self.gatelist)), initializer=param)
         #self.param = tf.get_variable("w", initializer=param)
         self.prev=tf.zeros_like(self.param)
-        self.rmsprev=tf.real(tf.zeros_like(self.param))
+        self.nesterovprev = tf.identity(self.param)
+        self.rmsprev=tf.zeros_like(self.param)
         self.gatelist.append(self)
         self.time=1
         self.amsgradprev=tf.real(tf.zeros_like(self.param))
@@ -29,6 +30,20 @@ class genericQGate:
         temp=self.tensor(input, self.param, self.sizeF, self.sizeQ, self.sizeP)
 
         return temp
+
+    def forward_nesterov_switch(self):
+        self.prev = self.param
+        self.param = self.nesterovprev
+        self.nesterovprev = self.prev
+
+        return 0
+
+    def normalise(self):
+        self.param, nothing = tf.qr(self.param)
+
+    def normalise_nesterov(self):
+        self.forward_nesterov_switch()
+        self.normalise()
 
     def tensor(self, input,matrix,sizeF,sizeQ,sizeP):
         shape=tf.shape(input)
@@ -57,19 +72,62 @@ class genericQGate:
     def grad(self,cost):
         return tf.squeeze(tf.gradients(ys=cost, xs=self.param))
 
-    def sgd(self,cost,learningrate):
-        dW =(1-self.momentum) *self.grad(cost)+ self.momentum*self.prev
+    def sgd(self,cost,learningrate,momentum=0.9):
+        dW =(1-momentum) *self.grad(cost)+ momentum*self.prev
         self.prev =dW
 
         return self.update(dW,learningrate)
 
-    def rms(self, cost,gamma=0.9):
+    # adapted  for ml From arxiv 1903.05204
+    # does / should not really work
+    def sgdtm(self,cost,learningrate):
+        x=self.grad(cost)
+        identityreal = tf.eye(x.shape[0].value)
+        zero = tf.zeros_like(identityreal)
+        identity = tf.complex(identityreal, zero)
+
+        V= 2.0*x * tf.matrix_inverse(identity+tf.matmul(x,self.prev,adjoint_a=True))
+        Y = self.projection(V,x,1+self.momentum)
+        self.prev =  x
+
+        return self.update(Y,learningrate)
+
+    # adapted  for ml From arxiv 1903.05204
+    def sgdnesterov(self,cost,learningrate,momentum):
+
+        X = self.update(self.grad(cost), learningrate)
+        # x=self.grad(cost)
+        identityreal = tf.eye(X.shape[0].value)
+        zero = tf.zeros_like(identityreal)
+        identity = tf.complex(identityreal, zero)
+
+        V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.nesterovprev, adjoint_a=True))
+        self.param = self.projection(V, self.nesterovprev, 1 + self.momentum)
+        self.nesterovprev = X
+
+        #V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.param, adjoint_a=True))
+        #self.nesterovprev = self.projection(V, self.nesterovprev, 1 + self.momentum)
+        #self.param = X
+
+        return X
+
+    def __str__(self):
+        return "gqgate: num_qubit_input: " +str(self.nbqubitinput) + " num_qubit_gate:"+str(self.nbqubitGatesize)\
+        + " pos_first_qubit :" + str(self.posfirstqubit) +"\n"
+
+    def mround(self,m,i):
+        m = tf.complex(tf.cast(tf.round(tf.real(m) * i), dtype="float32"),
+                        tf.cast(tf.round(tf.imag(m) * i), dtype="float32"))
+        return  tf.div(m, i)
+
+    # The optimisers do not work
+    def rms(self, cost,learningrate,gamma=0.9):
         dW = self.grad(cost)
-        self.rmsprev = gamma *  self.rmsprev  + (1-gamma) * tf.square(tf.abs(dW))
-        div=tf.complex(self.rmsprev,(tf.zeros_like(self.rmsprev)))
-        dW = tf.div(dW,tf.sqrt(div + 0.00000001))
+        self.rmsprev = gamma *  self.rmsprev  + (1.0-gamma) * tf.square(dW)
+        #div=tf.complex(self.rmsprev,(tf.zeros_like(self.rmsprev)))
+        dW = dW /(tf.sqrt(self.rmsprev) + 0.00000001)
         #dW=self.mround(dW, 10000)
-        return self.update(dW)
+        return self.update(dW,learningrate)
 
     def adam(self, cost, beta1=0.9,beta2=0.999,epsilon=0.00000001):
         dW = self.grad(cost)
@@ -94,15 +152,7 @@ class genericQGate:
         # dW=self.mround(dW, 10000)
         return self.update(dW)
 
-    def mround(self,m,i):
-        m = tf.complex(tf.cast(tf.round(tf.real(m) * i), dtype="float32"),
-                        tf.cast(tf.round(tf.imag(m) * i), dtype="float32"))
-        return  tf.div(m, i)
 
-
-    def __str__(self):
-        return "gqgate: num_qubit_input: " +str(self.nbqubitinput) + " num_qubit_gate:"+str(self.nbqubitGatesize)\
-        + " pos_first_qubit :" + str(self.posfirstqubit) +"\n"
 
     def Hessian(self, cost):
         grad_ys=tf.ones_like(self.param)

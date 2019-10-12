@@ -25,6 +25,31 @@ def onehotqubits(input,nbqubit):
     imag=tf.zeros_like(vec,dtype="float32")
     return tf.transpose(tf.complex(vec,imag))
 
+def state_activation_0(x):
+    #i*x
+    #x = tf.complex(x,tf.zeros_like(x))
+    cx= tf.complex(0.0,1.0)*tf.complex(x,tf.zeros_like(x))
+    #cx= tf.complex(0.0,1.0)*x
+    vect = tf.math.exp(cx)
+    tmp = tf.multiply(tf.conj(vect),vect)
+    dem = tf.rsqrt(tf.reduce_sum(tmp,axis=1))
+    #dem= 1/(tf.norm(vect,axis=1))
+    tmp= tf.einsum('ij,i->ij',vect,dem)
+    return tmp
+
+
+def state_activation(x,y):
+    #i*x
+    #x = tf.complex(x,tf.zeros_like(x))
+    cx= tf.complex(0.0,1.0)*tf.complex(x,tf.zeros_like(x))
+    #cx= tf.complex(0.0,1.0)*x
+    vect = tf.complex(y,tf.zeros_like(y))*tf.math.exp(cx)
+    tmp = tf.multiply(tf.conj(vect),vect)
+    dem = tf.rsqrt(tf.reduce_sum(tmp,axis=1))
+    #dem= 1/(tf.norm(vect,axis=1))
+    tmp= tf.einsum('ij,i->ij',vect,dem)
+    return tmp
+
 
 if __name__ == "__main__":
     real = [[1 / tf.sqrt(2.0), 1 / tf.sqrt(2.0)], [1 / tf.sqrt(2.0), -1 / tf.sqrt(2.0)]]

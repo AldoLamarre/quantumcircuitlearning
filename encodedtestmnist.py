@@ -32,13 +32,15 @@ if __name__ == "__main__":
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
     learningrate = -0.01
     momentum = 0.9
-    datasize = 60000
-    batch_size = 2
+    datasize = 55000
+    batch_size = 8
+    valid_batch_size = 8
     iterepoch= datasize / batch_size
-    nbqubits= 11
+    itervalid = 5000 / valid_batch_size
+    nbqubits= 18
     targetnbqubit=4
-    aritycircuitsize= 8
-    aritycircuitdepth= 9
+    aritycircuitsize= 9
+    aritycircuitdepth= 13
 
     x = tf.placeholder(tf.float32, shape=[None, 784])
     y = tf.placeholder(tf.int64, shape=[None])
@@ -63,9 +65,14 @@ if __name__ == "__main__":
     vectorinputs = preprocess(x,nbqubits)
 
     #cir = subcircuit.ArityFillCircuit(nbqubits, 8, 6, "test0", learningrate, momentum)
-    cir = subcircuit.ArityFillCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
+    cir = subcircuit.QuincunxCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0")
+    #cir = subcircuit.ArityHalfCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
 
     out = cir.forward(vectorinputs)
+
+    outvalid = cir.forward_nesterov_test(vectorinputs, 1, True)
+    #outvalid = cir.forward_nesterov_test(vectorinputs)
+
     #y=tf.transpose(tf.cast(y, dtype="float32"))
     labels = tf.transpose(tf.cast(labels, dtype="float32"))
 
@@ -79,11 +86,27 @@ if __name__ == "__main__":
     maxmetric = lossfunction.max_metric(out, labels,nbqubits,targetnbqubit,10,"inttoqubit")
     cost=lossfunction.cross_entropy(out, target,nbqubits,targetnbqubit)
 
+    fd_list_valid = lossfunction.fidelity_partial_list(outvalid, target, nbqubits, targetnbqubit)
+    # cost=tf.reduce_mean(fd_list)
+    majmetric_valid = lossfunction.majority_metric(fd_list_valid)
+    maxmetric_valid = lossfunction.max_metric(outvalid, labels, nbqubits, targetnbqubit, 10, "inttoqubit")
+    cost_valid = lossfunction.cross_entropy(outvalid, target, nbqubits, targetnbqubit)
+    mcls_valid = lossfunction.maxclass(outvalid, labels, nbqubits, targetnbqubit, 16, "inttoqubit")
+
+    tmaxmetric_valid = lossfunction.max_metric(outvalid, labels, nbqubits, targetnbqubit, 16, "inttoqubit")
+
     updates = []
-    for gates in cir.gatelist:
-       updates.append(gates.sgd(cost,lrdecay))
+    #for gates in cir.gatelist:
+       #updates.append(gates.sgd(cost,lrdecay))
+    for i in range(1, len(cir.gatelist)):
+        updates.append(cir.gatelist[len(cir.gatelist) - i].sgdnesterov(cost, lrdecay,momentum))
 
     scost = tf.summary.scalar(name='cost', tensor=cost)
+
+
+
+
+
 
     flag = 1
     max = 0
@@ -109,6 +132,7 @@ if __name__ == "__main__":
         sess.run(start)
         for i in range(600000):
             # print("iter "+str(i))
+
             input_batch, labels_batch = mnist.train.next_batch(batch_size)
             input_batch = input_batch / 255
 
@@ -151,24 +175,46 @@ if __name__ == "__main__":
                     f.write("iter: " + str(epoch) + "\nfd: " + str(fdloop) + "\nparam: " + str(
                         up) + "\n" + "iter end\n")
                     f.flush()
-                    # fdtest = sess.run([costtest])
-                    # print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest))
-                    # f.write("iter test: " + str(epoch) + "\nfd test: " + str(fdtest) + "\nparam: " + str(
-                    #     up) + "\n" + "iter test end\n")
-                # if epoch % 10 == 0 or epoch >= 130:
-                #     fdtest, ttest, itest, otest, fdlist = sess.run(
-                #         [costtest, targettest, testready, outtest, fd_test_list])
-                #     print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest))
-                #     f.write("iter test:" + str(epoch) + "\nfd test: " + str(fdtest) + "\nparam: " + str(
-                #         up) + "\n" + "iter test end\n")
-                #
-                #     print("input test " + str(itest) + "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
-                #           "\nfd_list  test= " + str(fdlist) + "\ntest end\n")
-                #     f.write("input test " + str(itest) + "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
-                #             "\nfd_list  test= " + str(fdlist) + "\ntest end\n")
-                fdloop = 0
-                mxmloop = 0
-                mjmloop = 0
+                fdloop = 0.0
+                mxmloop = 0.0
+                mjmloop = 0.0
+                tmmloop = 0.0
+
+                # input_batch, labels_batch = mnist.validation.images ,mnist.validation.labels
+                for i in range(0, 5000 // valid_batch_size):
+                    input_batch, labels_batch = mnist.validation.next_batch(valid_batch_size)
+                    input_batch = input_batch / 255
+                    fd_valid, mjm_valid, mxm_valid, tmm_valid, fdlist_valid, = sess.run(
+                        [cost_valid, majmetric_valid, maxmetric_valid, tmaxmetric_valid, fd_list_valid],
+                        feed_dict={x: input_batch, y: labels_batch, iter: epoch}, options=options,
+                        run_metadata=run_metadata)
+
+                    fdloop += fd_valid
+                    mjmloop += mjm_valid
+                    mxmloop += mxm_valid
+                    tmmloop += tmm_valid
+
+                fdloop /= itervalid
+                mjmloop /= itervalid
+                mxmloop /= itervalid
+                tmmloop /= itervalid
+
+                print(
+                    "Valid epoch " + str(epoch) + "\nfd = " + str(fdloop) + "\nmajority accuracy = " + str(mjmloop)
+                    + "\nmax accuracy = " + str(mxmloop) + "\ntrue max accuracy = " + str(tmmloop))
+
+                f.write(
+                    "Valid epoch: " + str(epoch) + "\nfd: " + str(fdloop) + "\nmajority accuracy = " + str(mjmloop)
+                    + "\nmax accuracy = " + str(mxmloop) + "\ntrue max accuracy = " + str(
+                        tmmloop) + "\n" + "test epoch end\n")
+
+                fdloop = 0.0
+                mxmloop = 0.0
+                mjmloop = 0.0
+                tmmloop = 0.0
+                #fdloop = 0
+                #mxmloop = 0
+                #mjmloop = 0
         # Create the Timeline object, and write it to a json file
         fetched_timeline = timeline.Timeline(run_metadata.step_stats)
         chrome_trace = fetched_timeline.generate_chrome_trace_format()
@@ -181,3 +227,4 @@ if __name__ == "__main__":
         print("min")
         print(min)
         print(iterbest)
+        f.close()

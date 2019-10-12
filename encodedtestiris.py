@@ -30,18 +30,23 @@ def preprocess(input):
 if __name__ == "__main__":
     #tf.enable_eager_execution()
     learningrate = -0.01
-    momentum = 0.01
+    momentum = 0.9
     nbqubits=16
     targetnbqubit=2
+    batch_size = 2
+    aritycircuitsize = 8
+    aritycircuitdepth = 11
+
 
     iter = tf.cast(tf.placeholder(tf.int32, shape=()),tf.float32)
 
     #lrdecay= tf.complex(learningrate / tf.add(iter , 1.0),0.0)
     #lrdecay = learningrate*tf.complex(tf.pow(0.9,tf.floor(iter / 10)), 0.0)
-    lrdecay = learningrate
+    lrdecay= tf.complex(learningrate / tf.add(iter/100 , 1.0),0.0)
+    #lrdecay = learningrate
     train, test = iris_data.load_data()
     features, labels = train
-    dataset = iris_data.train_input_fn(features, labels,2,None)
+    dataset = iris_data.train_input_fn(features, labels,batch_size,None)
     dataset= dataset.map(pack_features_vector)
     inputbatch,targetbatch = dataset.make_one_shot_iterator().get_next()
 
@@ -66,7 +71,7 @@ if __name__ == "__main__":
     #gate1 = genericQGate.genericQGate(param, nbqubits, nbqubits//2, 0, learningrate, momentum)
     #gate2 = genericQGate.genericQGate(param, nbqubits, nbqubits//2, 7, learningrate, momentum)
 
-    cir = subcircuit.ArityFillCircuit(nbqubits, 8, 6, "test0", learningrate, momentum)
+    cir = subcircuit.ArityFillCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
 
     #temp = gate0.forward(vectorinputs)
     #temp1 = gate1.forward(temp)
@@ -105,7 +110,7 @@ if __name__ == "__main__":
     #costm = lossfunction.msq_real(tf.real(out), tf.real(targetmsq))
     updates = []
     for gates in cir.gatelist:
-       updates.append(gates.sgd(cost,lrdecay))
+       updates.append(gates.sgdtm(cost,lrdecay))
 
     #update=gate0.sgd(cost)
     scost = tf.summary.scalar(name='cost', tensor=cost)
@@ -115,7 +120,7 @@ if __name__ == "__main__":
     #ttemp = gate0.forward(testready)
     #ttemp1 = gate1.forward(ttemp)
     #ttemp2=gate2.forward(ttemp1)
-    outtest = cir.forward(testready)
+    outtest = cir.forward_nesterov_test(testready)
     #outtest = cir.forward(outtest)
     #outtest = cir.forward(outtest)
     #outtest = cir.forward(outtest)
@@ -166,6 +171,16 @@ if __name__ == "__main__":
             mjmloop += maj
             # print(fd)
             # print(cm)
+
+            if  i == 0:
+                fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                chrome_trace = fetched_timeline.generate_chrome_trace_format()
+                g = open("timeline\\iris\\log_timeline_" +str(batch_size)+ "_" + str(nbqubits) + "_" +str(targetnbqubit) + "_"
+                         + str(aritycircuitsize) + "_" + str(aritycircuitdepth) +"_"
+                         + time.strftime("%Y%m%d-%H%M%S") + ".json", 'x')
+                g.write(chrome_trace)
+                g.close()
+
             if (i+1)%75==0 and i>0:
                 fdloop /= 75
                 mxmloop /= 75
@@ -206,11 +221,7 @@ if __name__ == "__main__":
                 fdloop = 0
                 mxmloop = 0
                 mjmloop = 0
-        # Create the Timeline object, and write it to a json file
-        fetched_timeline = timeline.Timeline(run_metadata.step_stats)
-        chrome_trace = fetched_timeline.generate_chrome_trace_format()
-        with open('timeline_01.json', 'w') as g:
-            g.write(chrome_trace)
+
 
         print("max")
         print(max)

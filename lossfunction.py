@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import unionlayer
 
 def fidelity(output, target):
@@ -29,7 +30,7 @@ def fidelity_partial_list(output, target,nbqubitout,nbqutbittarget):
     #partialnorm=tf.div(partial, tf.norm(partial, axis=0))
     target2=unionlayer.join(partial,target)
     #print(target2)
-    temp=tf.abs(tf.reduce_sum(tf.square(tf.einsum('ij,ij->ij', tf.conj(target2), output)), axis=0))
+    temp=tf.abs(tf.reduce_sum(tf.square(tf.abs(tf.einsum('ij,ij->ij', tf.conj(target2), output))), axis=0))
     #print(temp)
     return temp
 
@@ -65,6 +66,11 @@ def max_metric(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding):
     #print(temp)
     #print(temp2)
     return tf.reduce_mean(tf.cast(temp2,dtype='float32'))
+#bugger to patch or removed
+def true_max_metric(output, labels,nbqubitout,nbqutbittarget, encoding):
+    nbclass = 1 <<   nbqutbittarget
+    print(nbclass)
+    return max_metric(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding)
 
 def cross_entropy(output, target,nbqubitout,nbqutbittarget):
     fd_list=fidelity_partial_list(output,target,nbqubitout,nbqutbittarget)
@@ -100,11 +106,36 @@ if __name__ == "__main__" :
     real = [[1.0, 0.0],[1.0 ,0.0]]
     imag = [[0.0, 0.0],[0.0 ,0.0]]
     zero = tf.transpose(tf.complex(real, imag))
+    label=[[1],[0]]
 
-    print(fidelity_partial_list(un,zero,2,1))
+    #print(fidelity_partial_list(un,zero,2,1))
     fd_list=fidelity_partial_list(un, zero, 2, 1)
-    print(majority_metric(fd_list))
-    print(cross_entropy(un, zero,2,1))
-    label=tf.transpose(tf.cast([0.0,1.0], dtype="float32"))
-    print(maxclass(un, label, 2, 1, 2, 'inttoqubit'))
-    print(max_metric(un,label,2,1,2,'inttoqubit'))
+    print(fd_list)
+    #print(true_max_metric(fd_list))
+    # print(cross_entropy(un, zero,2,1))
+    # label=tf.transpose(tf.cast([0.0,1.0], dtype="float32"))
+    #print(maxclass(un, label, 2, 1, 2, 'inttoqubit'))
+    #print(true_max_metric(un,label,2,1,'inttoqubit'))
+
+
+    real = [[1 / tf.sqrt(2.0), 1 / tf.sqrt(2.0)],[1 / tf.sqrt(2.0), 1 / tf.sqrt(2.0)]]
+    imag = [[0.0, 0.0],[0.0, 0.0]]
+    plus = tf.transpose(tf.complex(real, imag))
+    temp=unionlayer.join(plus,plus)
+
+    testtarget0=unionlayer.inttoqubit([0.0,0.0], 1)
+    testtarget1 = unionlayer.inttoqubit([1.0, 1.0], 1)
+    tep=tf.random.uniform([256,2])
+
+    test3=tf.transpose(unionlayer.state_activation_0(tf.transpose(tep)))
+    print(test3)
+    print(np.linalg.norm(test3, ord=2, axis=0))
+
+    test4=tf.transpose(tf.nn.softmax(tf.transpose(tep)))
+    print(test4)
+    print(np.sum(test4,axis=0))
+
+    #print(test3)
+    #print(test)
+    print(fidelity_partial_list(test3, testtarget0, 8, 1))
+    print(fidelity_partial_list(test3, testtarget1, 8, 1))
