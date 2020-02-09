@@ -3,6 +3,7 @@ import lazymeasure
 import unionlayer
 import genericQGate
 from abc import ABC, abstractmethod
+from scipy.stats import unitary_group
 
 class SubCircuit:
 
@@ -27,9 +28,11 @@ class ArityFillCircuit(SubCircuit):
         self.arity=arity
         size= 1 << arity
         #real = tf.get_variable(name+"w",[size,size],initializer=init)
-        real= tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
-        imag =  tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
-        param=tf.complex(real,imag)
+        #real= tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
+        #imag =  tf.multiply(1.0/tf.sqrt(2.0),tf.eye(size, dtype="float32"))
+        #param=tf.complex(real,imag)
+        param = tf.convert_to_tensor(unitary_group.rvs(size),dtype='complex64')
+        paramdagger= tf.transpose(param, conjugate=True)
         for y in range(start,length):
             if(y%2==0):
                 for x in range(0,nbqubitinput//arity):
@@ -58,7 +61,7 @@ class ArityFillCircuit(SubCircuit):
 
                 for x in range(0, (nbqubitinput-1) // arity):
                     with tf.variable_scope(name + "row"+ str(y) + "gate" + str(x+1)):
-                        gate = genericQGate.genericQGate(param, nbqubitinput, arity, 1+x * arity, learningrate, momentum)
+                        gate = genericQGate.genericQGate(paramdagger, nbqubitinput, arity, 1+x * arity, learningrate, momentum)
                         self.gatelist.append(gate)
 
                 leftover = (nbqubitinput-1) % arity
@@ -74,14 +77,16 @@ class ArityFillCircuit(SubCircuit):
                         self.gatelist.append(gate)
 
 
-    def forward(self,input):
+    def forward(self,input,normalise=False):
         tmp=input
         for gate in self.gatelist:
+            if normalise:
+                gate.normalise()
             tmp=gate.forward(tmp)
 
         return tmp
 
-    def forward_nesterov_test(self, input):
+    def forward_nesterov_test(self, input,recursion=0,normalise=False):
         for gate in self.gatelist:
             gate.forward_nesterov_switch()
         tmp=self.forward(input)
@@ -157,10 +162,8 @@ class ArityHalfCircuit(ArityFillCircuit):
             self.gatelist.insert(1,gate)
 
 
-
-
-    #
-    def forward(self, input):
+    # renormalise
+    def forward(self, input,normalise=False):
             half0 = self.gatelist[0].forward(input)
             half1 = self.gatelist[1].forward(input)
             tmp=unionlayer.join(half0,half1)
@@ -201,8 +204,8 @@ class ArityHalfAncilaryCircuit(ArityFillCircuit):
        #self.ancilaries = anc
 
 
-    #
-    def forward(self, input):
+    # renormalise
+    def forward(self, input,normalise=False):
             half0 = self.gatelist[0].forward(input)
             half1 = self.gatelist[1].forward(input)
             tmp=unionlayer.join(half0,half1)
@@ -305,38 +308,77 @@ class QuincunxCircuit(SubCircuit):
     def __init__(self, nbqubitinput, arity, length, name, learningrate=0, momentum=0, start=0):
         super().__init__(nbqubitinput, name)
         init = tf.orthogonal_initializer
+        init1 = tf.initializers.he_normal()
+        init2 = tf.initializers.glorot_normal()
+        init3 = tf.initializers.he_uniform()
+        init4 = tf.initializers.glorot_uniform()
+        initz = tf.initializers.zeros()
         self.arity = arity
         size = 1 << arity
-        # real = tf.get_variable(name+"w",[size,size],initializer=init)
+
         real = tf.multiply(1.0 / tf.sqrt(2.0), tf.eye(size, dtype="float32"))
         imag = tf.multiply(1.0 / tf.sqrt(2.0), tf.eye(size, dtype="float32"))
-        param = tf.complex(real, imag)
+        paramidentity = tf.complex(real, imag)
+        #paramidentity = tf.eye(size, dtype="complex64")
+
+        #real = tf.get_variable(name+"wr",[size,size],initializer=init)
+        #imag = tf.get_variable(name+"wc",[size,size],initializer=init)
+        #real = tf.get_variable(name + "wr", [size, size], initializer=init)
+        #imag = tf.get_variable(name + "wc", [size, size], initializer=initz)
+        #param = tf.multiply(tf.complex(1.0 / tf.sqrt(2.0),1.0 / tf.sqrt(2.0)),tf.complex(real, imag))
+
+        #real = tf.get_variable(name+"wr",[size,size],initializer=init3)
+        #imag = tf.get_variable(name+"wc",[size,size],initializer=init3)
+
+        #param = paramidentity
+
+        #param = tf.convert_to_tensor(unitary_group.rvs(size),dtype='complex64')
+        #param, nothing  = tf.qr(tf.complex(real, imag))
+        #paramdagger = tf.transpose(param, conjugate=True)
+        #paramset = param
+        #counter = 0
         for y in range(start, length):
             if (y % 2 == 0):
                 # Same code as arity filled circuits
                 for x in range(0,nbqubitinput//arity):
                     with tf.variable_scope(name+"row"+str(y)+"gate"+str(x)):
-                        gate = genericQGate.genericQGate(param, nbqubitinput, arity, x*arity,learningrate,momentum)
+                        #if counter % 2 == 1 :
+                        #    paramset = paramdagger
+                        #else :
+                        #    paramset = param
+                        gate = genericQGate.genericQGate(paramidentity, nbqubitinput, arity, x*arity,learningrate,momentum)
                         self.gatelist.append(gate)
+                    #with tf.variable_scope(name + "row" + str(y) + "gate" + str(x)+"dagger"):
+                        #gate = genericQGate.genericQGate(paramidentity, nbqubitinput, arity, x * arity, learningrate,
+                         #                               momentum)
+                        #self.gatelist.append(gate)
+
 
                 leftover=nbqubitinput % arity
                 pos = nbqubitinput - leftover
                 if(pos <nbqubitinput):
                     with tf.variable_scope(name+"row"+str(y)+"gate"+ str(pos)):
                         size = 1 << leftover
-                        real = tf.get_variable("v",[size,size],initializer=init)
-                        #real = tf.eye(size, dtype="float32")
-                        imag = tf.zeros_like(real)
+                        #real = tf.get_variable("v",[size,size],initializer=init)
+                        real = tf.multiply(1.0 / tf.sqrt(2.0), tf.eye(size, dtype="float32"))
+                        imag = tf.multiply(1.0 / tf.sqrt(2.0), tf.eye(size, dtype="float32"))
                         param_l = tf.complex(real, imag)
                         gate = genericQGate.genericQGate(param_l, nbqubitinput, leftover, pos, learningrate, momentum)
                         self.gatelist.append(gate)
+                #counter +=1
 
             else:
                 for x in range(0, (nbqubitinput - arity//2) // arity):
                     with tf.variable_scope(name + "row" + str(y) + "gate" + str(x + arity//2)):
-                        gate = genericQGate.genericQGate(param, nbqubitinput, arity, arity//2 + x * arity, learningrate,
+                        gate = genericQGate.genericQGate(paramidentity, nbqubitinput, arity, arity//2 + x * arity, learningrate,
                                                          momentum)
                         self.gatelist.append(gate)
+
+                    #with tf.variable_scope(name + "row" + str(y) + "gate" + str(x + arity // 2)+"dagger"):
+                        #gate = genericQGate.genericQGate(paramidentity, nbqubitinput, arity, arity // 2 + x * arity,
+                        #                                 learningrate,
+                        #                                momentum)
+                        #self.gatelist.append(gate)
 
     def forward(self,input,recursion=0):
         tmp=input

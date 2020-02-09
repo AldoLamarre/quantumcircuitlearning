@@ -1,5 +1,8 @@
+#import os
+#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
 #from pandas.conftest import axis
+
 
 import lazymeasure
 import unionlayer
@@ -12,6 +15,7 @@ import numpy as np
 import vectorencoder
 from tensorflow.python.client import timeline
 from tensorflow.examples.tutorials.mnist import input_data
+#tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 #mnist = tf.keras.datasets.mnist
 #(X_train, y_train), (X_test, y_test) = mnist.load_data()
@@ -58,7 +62,7 @@ if __name__ == "__main__":
     #tf.enable_eager_execution()
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=False)
     learningrate = -0.01
-    momentum = 0.1
+    momentum = 0.9
     datasize = 55000
     batch_size = 8
     valid_batch_size=8
@@ -72,8 +76,9 @@ if __name__ == "__main__":
     x = tf.placeholder(tf.float32, shape=[None, 784])
     y = tf.placeholder(tf.int64, shape=[None])
     #anc = tf.zeros([batch_size,1])
-    anc=tf.zeros_like(y)
-    anc = unionlayer.inttoqubit(anc,targetnbqubit-2)
+    ancinit=1*tf.ones_like(y)
+    anc0 = unionlayer.inttoqubit(ancinit,8)
+    #anc1 = unionlayer.inttoqubit(ancinit,4)
     # 01234 v 56789
     #labels = tf.clip_by_value(y,4,5)
     #labels -= 4
@@ -101,24 +106,24 @@ if __name__ == "__main__":
     init2 = tf.initializers.glorot_normal()
     init3 = tf.initializers.zeros()
 
-    #w0 = tf.get_variable("nnw0",[784,512],initializer=init)
-    #w1 = tf.get_variable("nnw1",[512,512], initializer=init)
+    w0 = tf.get_variable("nnw0",[784,1024],initializer=init)
+    w1 = tf.get_variable("nnw1",[1024,1024], initializer=init)
     #wf = tf.get_variable("nnwf", [512,16], initializer=init2)
     #wfr = tf.get_variable("nnwfr", [512, 16], initializer=init2)
     #wfc = tf.get_variable("nnwfc", [512, 16], initializer=init2)
-    #b0 = tf.get_variable("nnb0", [512], initializer=init3)
-    #b1 = tf.get_variable("nnb1", [512], initializer=init3)
+    b0 = tf.get_variable("nnb0", [1024], initializer=init3)
+    b1 = tf.get_variable("nnb1", [1024], initializer=init3)
     #bf = tf.get_variable("nnbf", [16], initializer=init3)
     bfr = tf.get_variable("nnbfr", [2**8], initializer=init3)
     #bfc = tf.get_variable("nnbfc", [16], initializer=init3)
-    wmlp = tf.get_variable("nnw0f",[784,2**8],initializer=init2)
+    wmlp = tf.get_variable("nnw0f",[1024,2**8],initializer=init2)
 
     nnparamlist=[]
 
-    #nnparamlist.append(w1)
-    #nnparamlist.append(b1)
-    #nnparamlist.append(w0)
-    #nnparamlist.append(b0)
+    nnparamlist.append(w1)
+    nnparamlist.append(b1)
+    nnparamlist.append(w0)
+    nnparamlist.append(b0)
     #nnparamlist.append(bf)
     #nnparamlist.append(wf)
     #nnparamlist.append(bfc)
@@ -130,15 +135,15 @@ if __name__ == "__main__":
     #state= state_activation(tf.nn.bias_add(tf.matmul(wf,tf.nn.relu_layer(tf.nn.relu_layer(x,w0,b0),w0,b1)),bf))
     #state=tf.nn.bias_add(tf.matmul(wf,tf.nn.relu_layer(x, w0, b0)),bf)
 
-    #l0=tf.nn.relu(tf.matmul(x, w0) +b0 )
-    #l1=tf.nn.relu(tf.matmul(l0, w1) +b1 )
+    l0=tf.nn.relu(tf.matmul(x, w0) +b0 )
+    l1=tf.nn.relu(tf.matmul(l0, w1) +b1 )
     #ltr = tf.nn.tanh(tf.matmul(l1, wfr) + bfr)
     #tc = tf.nn.tanh(tf.matmul(l1, wfc) + bfc)
     #lf = state_activation(ltr,ltc)
 
-    ltr = (tf.matmul(x, wmlp) + bfr)
+    #ltr = (tf.matmul(x, wmlp) + bfr)
 
-    #ltr = (tf.matmul(l1, wmlp) + bfr)
+    ltr = (tf.matmul(l1, wmlp) + bfr)
 
     lf = state_activation_0(ltr)
 
@@ -158,6 +163,9 @@ if __name__ == "__main__":
     #print(lfn.shape)
     #print(tf.norm(tmp2, axis=1))
     nninput=tf.transpose(lf)
+    #sth=unionlayer.join(anc0,nninput )
+    #st=unionlayer.join(sth,anc1)
+    st=unionlayer.join(anc0,nninput)
 
 
     #cir = subcircuit.ArityFillCircuit(nbqubits, 8, 6, "test0", learningrate, momentum)
@@ -165,12 +173,12 @@ if __name__ == "__main__":
 
     #cir = subcircuit.ArityHalfCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
 
-    cir = subcircuit.HalfQuincunxCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0")
+    cir = subcircuit.QuincunxCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0")
 
     #out = cir.forward_two_inputs(nninput,stateinput)
     #out = cir.forward_two_inputs(nninput, nninput)
     #out = cir.forward(nninput)
-    out = cir.forward(nninput,1)
+    out = cir.forward(st,1)
     #for x in range(0,8):
 
     #out = cir.recursion(out)
@@ -182,7 +190,7 @@ if __name__ == "__main__":
     #out = cir.recursion(out)
     #out = cir.recursion(out)
 
-    outvalid = cir.forward_nesterov_test(nninput,1,True)
+    outvalid = cir.forward_nesterov_test(st,1,True)
     #print(tf.norm(out, axis=0))
     #out = tf.div(out, )
     #print(out.shape)

@@ -39,6 +39,21 @@ def majority_metric(fd_list):
     temp = tf.where(fd_list > 0.50, tf.ones_like(fd_list),tf.zeros_like(fd_list))
     return tf.reduce_mean(temp)
 
+
+def problist(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding):
+    problist =[]
+
+    for x in range(0,nbclass):
+        if encoding == 'inttoqubit' :
+            temptarget =  unionlayer.inttoqubit(tf.fill(tf.shape(labels),x),nbqutbittarget)
+
+        elif encoding == 'onehot':
+            temptarget = unionlayer.onehotqubits(tf.fill(tf.shape(labels),x), nbqutbittarget)
+
+        problist.append(fidelity_partial_list(output,temptarget,nbqubitout,nbqutbittarget))
+
+    return tf.stack(problist, 1)
+
 def maxclass(output, labels,nbqubitout,nbqutbittarget,nbclass, encoding):
     # la liste est inefficace
     problist =[]
@@ -74,7 +89,7 @@ def true_max_metric(output, labels,nbqubitout,nbqutbittarget, encoding):
 
 def cross_entropy(output, target,nbqubitout,nbqutbittarget):
     fd_list=fidelity_partial_list(output,target,nbqubitout,nbqutbittarget)
-    log_fd= tf.log(fd_list)
+    log_fd= tf.log(fd_list+0.00000001)
     return tf.reduce_mean(-1 * log_fd)
 
 
