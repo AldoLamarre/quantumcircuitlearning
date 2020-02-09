@@ -39,7 +39,8 @@ class genericQGate:
         return 0
 
     def normalise(self):
-        self.param, nothing = tf.qr(self.param)
+        self.param, nothing = tf.qr(self.param,full_matrices=True)
+        return self.param
 
     def normalise_nesterov(self):
         self.forward_nesterov_switch()
@@ -93,7 +94,7 @@ class genericQGate:
         return self.update(Y,learningrate)
 
     # adapted  for ml From arxiv 1903.05204
-    def sgdnesterov(self,cost,learningrate,momentum):
+    def sgdnesterov(self,cost,learningrate,momentum=0.9):
 
         X = self.update(self.grad(cost), learningrate)
         # x=self.grad(cost)
@@ -102,7 +103,7 @@ class genericQGate:
         identity = tf.complex(identityreal, zero)
 
         V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.nesterovprev, adjoint_a=True))
-        self.param = self.projection(V, self.nesterovprev, 1 + self.momentum)
+        self.param = self.projection(V, self.nesterovprev, 1 + momentum)
         self.nesterovprev = X
 
         #V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.param, adjoint_a=True))
@@ -129,17 +130,42 @@ class genericQGate:
         #dW=self.mround(dW, 10000)
         return self.update(dW,learningrate)
 
-    def adam(self, cost, beta1=0.9,beta2=0.999,epsilon=0.00000001):
+        # adapted  for ml From arxiv 1903.05204
+
+    def rmsnesterov(self, cost, learningrate, momentum=0.9,gamma=0.9):
+        dW = self.grad(cost)
+        self.rmsprev = gamma * self.rmsprev + (1.0 - gamma) * tf.square(dW)
+        # div=tf.complex(self.rmsprev,(tf.zeros_like(self.rmsprev)))
+        dW = dW / (tf.sqrt(self.rmsprev) + 0.00000001)
+
+
+        X = self.update(dW, learningrate)
+        # x=self.grad(cost)
+        identityreal = tf.eye(X.shape[0].value)
+        zero = tf.zeros_like(identityreal)
+        identity = tf.complex(identityreal, zero)
+
+        V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.nesterovprev, adjoint_a=True))
+        self.param = self.projection(V, self.nesterovprev, 1 + momentum)
+        self.nesterovprev = X
+
+        # V = 2.0 * X * tf.matrix_inverse(identity + tf.matmul(X, self.param, adjoint_a=True))
+        # self.nesterovprev = self.projection(V, self.nesterovprev, 1 + self.momentum)
+        # self.param = X
+
+        return X
+
+    def adam(self, cost, learningrate,beta1=0.9,beta2=0.999,epsilon=0.00000001):
         dW = self.grad(cost)
         m=self.prev=beta1* self.prev +(1- beta1)*dW
-        self.rmsprev = beta2 * self.rmsprev + (1 - beta2) * tf.square(tf.abs(dW))
-        v = tf.complex(self.rmsprev, (tf.zeros_like(self.rmsprev)))
+        self.rmsprev = beta2 * self.rmsprev + (1.0 - beta2) * tf.square(dW)
+        #v = tf.complex(self.rmsprev, (tf.zeros_like(self.rmsprev)))
         mhat=tf.div(m,tf.complex(1-tf.pow(beta1,self.time),0.0))
-        vhat = tf.div(v, tf.complex(1 - tf.pow(beta2,self.time),0.0))
+        vhat = tf.div(self.rmsprev, tf.complex(1 - tf.pow(beta2,self.time),0.0))
         dW = tf.div(mhat, tf.sqrt(vhat) + epsilon)
         self.time+=1
         # dW=self.mround(dW, 10000)
-        return self.update(dW)
+        return self.update(dW,learningrate)
 
     def amsgrad(self, cost, beta1=0.9,beta2=0.999,epsilon=0.00000001):
         dW = self.grad(cost)

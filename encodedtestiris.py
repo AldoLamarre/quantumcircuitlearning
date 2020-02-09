@@ -7,6 +7,7 @@ import lossfunction
 import iris_data
 import time
 import vectorencoder
+import numpy as np
 from tensorflow.python.client import timeline
 
 def pack_features_vector(features, labels):
@@ -15,34 +16,44 @@ def pack_features_vector(features, labels):
   return features, labels
 
 
-def preprocess(input):
+def preprocess(input,target):
     #ctes=vectorencoder.gennormpluscte(castinput,3,cte=0.01)
+    #ancinit = 3 * tf.ones_like(target)
+    #ancinit2 = 63*tf.ones_like(target)
+    #anc0 = unionlayer.inttoqubit(ancinit, 8)
+    #anc1 = unionlayer.inttoqubit(ancinit2, 6)
+
     ctes = vectorencoder.gencte(input, 2, cte=0.0)
     #print(ctes)
     encodeddata=vectorencoder.encode_vectors(input,2,ctes)
     colvec =tf.transpose(encodeddata)
     #print(colvec.shape)
     c = unionlayer.join(colvec, colvec)
-    v = unionlayer.join(c, c)
-    w = unionlayer.join(v, v)
-    return w
+    #v = unionlayer.join(c, c)
+    #w = unionlayer.join(v, v)
+    #w = unionlayer.join(v, anc0 )
+    #w = unionlayer.join(anc1, w)
+    #w = unionlayer.join(c ,anc0 )
+    return c
 
 if __name__ == "__main__":
     #tf.enable_eager_execution()
     learningrate = -0.01
     momentum = 0.9
-    nbqubits=16
+    nbqubits= 4
     targetnbqubit=2
     batch_size = 2
-    aritycircuitsize = 8
-    aritycircuitdepth = 11
+    aritycircuitsize = 2
+    aritycircuitdepth = 5
 
 
     iter = tf.cast(tf.placeholder(tf.int32, shape=()),tf.float32)
 
     #lrdecay= tf.complex(learningrate / tf.add(iter , 1.0),0.0)
     #lrdecay = learningrate*tf.complex(tf.pow(0.9,tf.floor(iter / 10)), 0.0)
-    lrdecay= tf.complex(learningrate / tf.add(iter/100 , 1.0),0.0)
+    #lrdecay= tf.complex(learningrate / tf.add(iter/100 , 1.0),0.0)
+    first_decay_steps = 75
+    lrdecay = tf.complex(tf.train.cosine_decay_restarts(learningrate, iter, first_decay_steps), 0.0)
     #lrdecay = learningrate
     train, test = iris_data.load_data()
     features, labels = train
@@ -66,12 +77,12 @@ if __name__ == "__main__":
     #imag = tf.zeros_like(real, dtype="float32")
     #param = tf.complex(real, imag)
 
-    vectorinputs=preprocess(castinput)
+    vectorinputs=preprocess(castinput,targetbatch)
     #gate0 = genericQGate.genericQGate(param, nbqubits, nbqubits//2, 0, learningrate, momentum)
     #gate1 = genericQGate.genericQGate(param, nbqubits, nbqubits//2, 0, learningrate, momentum)
     #gate2 = genericQGate.genericQGate(param, nbqubits, nbqubits//2, 7, learningrate, momentum)
 
-    cir = subcircuit.ArityFillCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
+    cir = subcircuit.QuincunxCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
 
     #temp = gate0.forward(vectorinputs)
     #temp1 = gate1.forward(temp)
@@ -110,18 +121,18 @@ if __name__ == "__main__":
     #costm = lossfunction.msq_real(tf.real(out), tf.real(targetmsq))
     updates = []
     for gates in cir.gatelist:
-       updates.append(gates.sgdtm(cost,lrdecay))
+       updates.append(gates.sgdnesterov(cost,lrdecay,momentum))
 
     #update=gate0.sgd(cost)
     scost = tf.summary.scalar(name='cost', tensor=cost)
     #scostm = tf.summary.scalar(name='costm', tensor=costm)
 
-    testready= preprocess(tf.cast(testinputbatch, dtype="float32"))
+    testready= preprocess(tf.cast(testinputbatch, dtype="float32"),tf.cast(testtargetbatch, dtype="float32"))
     #ttemp = gate0.forward(testready)
     #ttemp1 = gate1.forward(ttemp)
     #ttemp2=gate2.forward(ttemp1)
-    outtest = cir.forward_nesterov_test(testready)
-    #outtest = cir.forward(outtest)
+    outtest = cir.forward_nesterov_test(testready,1,False)
+    #outtest = cir.forward(testready)
     #outtest = cir.forward(outtest)
     #outtest = cir.forward(outtest)
 
@@ -145,7 +156,7 @@ if __name__ == "__main__":
 
 
     flag = 1
-    max = 10
+    max = 10.0
     itermax = 0
     fdloop=0
     mxmloop=0
@@ -154,6 +165,8 @@ if __name__ == "__main__":
     summaries = tf.summary.merge_all()
     f = open("log\\log_" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "x")
     f.write("\n" + time.strftime("%Y%m%d-%H%M%S"))
+    h = open("log\\param_" + time.strftime("%Y%m%d-%H%M%S") + ".txt", "x")
+    h.write("\n" + time.strftime("%Y%m%d-%H%M%S"))
     with tf.Session() as sess:
         summary_writer = tf.summary.FileWriter("board\\iris\\log_" + time.strftime("%Y%m%d-%H%M%S"))
 
@@ -163,7 +176,7 @@ if __name__ == "__main__":
 
         start = tf.global_variables_initializer()
         sess.run(start)
-        for i in range(9000):
+        for i in range(20000):
             # print("iter "+str(i))
             fd,maj,max,up, s = sess.run([cost,majmetric_train,maxmetric_train ,updates, summaries,],feed_dict={iter: epoch },options=options, run_metadata=run_metadata)
             fdloop += fd
@@ -189,35 +202,47 @@ if __name__ == "__main__":
                 print("iter " + str(epoch) + "\nfd = " + str(fdloop))
                 print("majority accuracy = " + str(mjmloop))
                 print("max accuracy = " + str(mxmloop))
-                summary_writer.add_summary(s, epoch)
+
+                print(np.sum(np.matrix(up[0]).H * up[0] - np.eye(2**2, dtype=complex)))
+                print(np.sum(np.matrix(up[1]).H * up[1] - np.eye(2**2, dtype=complex)))
+                f.write("iter: " + str(epoch) + "\nfd: " + str(fdloop) + "\nmajority accuracy = " + str(mjmloop) + "\nmax accuracy = " +
+                        str(mxmloop) + "\n" + "iter end\n")
+
+
+                #if fdloop < max or epoch <= 130:
                 if fdloop < max:
                     max = fdloop
                     itermax = epoch
-                    f.write("iter: " + str(epoch) + "\nfd: " + str(fdloop)  + "\nparam: " + str(
-                        up) + "\nmajority accuracy = " + str(mjmloop) + "\nmax accuracy = " +
-                            str(mxmloop) + "\n" + "iter end\n")
-                    fdtest,maj,mx = sess.run([costtest,majmetric_test,maxmetric_test])
-                    print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) +
-                          "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
-                            str(mx))
-                    f.write("iter test: " + str(epoch) + "\nfd test: " + str(fdtest) +
-                            "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
-                            str(mx) +"\nparam: " + str(
-                        up) + "\n" + "iter test end\n")
-                if epoch % 10 ==0 or epoch >= 130:
+                    #f.write("iter: " + str(epoch) + "\nfd: " + str(fdloop)  + "\nparam: " + str(
+                        #up) + "\nmajority accuracy = " + str(mjmloop) + "\nmax accuracy = " +
+                            #str(mxmloop) + "\n" + "iter end\n")
+                    #fdtest,maj,mx = sess.run([costtest,majmetric_test,maxmetric_test],feed_dict={iter: epoch })
+                    #print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) +
+                    #      "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                    #        str(mx))
+                    #f.write("iter test: " + str(epoch) + "\nfd test: " + str(fdtest) +
+                    #        "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                    #        str(mx) +"\nparam: " + str(
+                    #    up) + "\n" + "iter test end\n")
+                #if epoch % 10 == 0 or epoch >= 130:
+                if True:
                     fdtest,ttest,itest,otest,fdlist,maj,mx = sess.run([costtest,targettest,
                                                                        testready,outtest,fd_test_list,
-                                                                       majmetric_test,maxmetric_test])
+                                                                       majmetric_test,maxmetric_test],feed_dict={iter: epoch })
                     print("iter test " + str(epoch) + "\nfd  test= " + str(fdtest) +
                           "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
-                            str(mx))
-                    f.write("iter test:" + str(epoch) + "\nfd test: " + str(fdtest) + "\nparam: " + str(
-                        up) + "\n" + "iter test end\n")
+                           str(mx))
+                    f.write("iter test:" + str(epoch) + "\nfd test: " + str(fdtest) +
+                          "\nmajority accuracy test= " + str(maj) + "\nmax accuracy test= " +
+                           str(mx) + "\n" + "iter test end\n")
 
-                    print("input test " + str(itest)+ "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
-                          "\nfd_list  test= " + str(fdlist) +"\ntest end\n")
-                    f.write("input test " + str(itest)+ "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
-                            "\nfd_list  test= " + str(fdlist) +"\ntest end\n")
+                    #print("input test " + str(itest)+ "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
+                    #      "\nfd_list  test= " + str(fdlist) +"\ntest end\n")
+                    #f.write("input test " + str(itest)+ "\ntarget" + str(ttest) + "\nout  test= " + str(otest) +
+                    #        "\nfd_list  test= " + str(fdlist) +"\ntest end\n")
+                h.write("iter: " + str(epoch) + "\nparam: " + str(up) + "iter end\n")
+                f.flush()
+                h.flush()
                 fdloop = 0
                 mxmloop = 0
                 mjmloop = 0

@@ -34,7 +34,7 @@ if __name__ == "__main__":
     momentum = 0.9
     datasize = 55000
     batch_size = 8
-    valid_batch_size = 8
+    valid_batch_size = 500
     iterepoch= datasize / batch_size
     itervalid = 5000 / valid_batch_size
     nbqubits= 18
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     vectorinputs = preprocess(x,nbqubits)
 
-    #cir = subcircuit.ArityFillCircuit(nbqubits, 8, 6, "test0", learningrate, momentum)
+    #cir = subcircuit.ArityFillCircuit(nbqubits,  aritycircuitsize, aritycircuitdepth,"test0", learningrate, momentum)
     cir = subcircuit.QuincunxCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0")
     #cir = subcircuit.ArityHalfCircuit(nbqubits, aritycircuitsize, aritycircuitdepth, "test0", learningrate, momentum)
 
